@@ -1,0 +1,56 @@
+# to install packages:
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+
+# in built packages:
+import os
+import time
+
+def set_driver(OUTPUT_PATH,PATH):
+    # this is what we want selenium to use as a platform to nav the web
+    # self = webdriver.Chrome(PATH)
+    options = webdriver.ChromeOptions()
+    prefs = {"download.default_directory" : OUTPUT_PATH}
+    options.add_experimental_option("prefs", prefs)
+    self = webdriver.Chrome(service=Service(PATH), options=options)
+    return self
+
+def login_url(self, URL,USERNAME,PASSWORD):
+    self.get(URL)
+    search = self.find_element(by=By.TAG_NAME,value='body')
+    # as this is interactive we need to store inside a WebElement variable
+    self.find_element(By.ID, "username").send_keys(USERNAME)
+    self.find_element(By.ID, "password").send_keys(PASSWORD)
+
+    self.find_element(By.TAG_NAME, 'button').click()
+
+    return self
+
+def pull_survey(URL,USERNAME,PASSWORD,SURVEY_NO,PATH,OUTPUT_PATH):
+    self = set_driver(OUTPUT_PATH, PATH)
+    self = login_url(self, URL,USERNAME,PASSWORD)
+    if self.title == 'title of web page when error occurs':
+        url_logoutsessions = self.find_element(By.CLASS_NAME,"text-center > a").get_attribute('href')
+        self.get(url_logoutsessions)
+    
+    
+    # go straight to the url where we can download export by survey ID
+    self.get(fr"https:\\webpage_where_survey_found\{SURVEY_NO}")
+    # click export csv button (path copied from inspect element on browser
+    self.find_element(By.XPATH, '//*[@id="ExportsGrid"]/form/div[1]/div[2]/div/div/div/button[1]').click()
+    time.sleep(2)
+    # wait for box to open before clicking checkbox to add url variables
+    self.find_element(By.XPATH, '//*[@id="option-urldata"]').click()
+    # click download & wait for box to get this ready
+    self.find_element(By.ID, 'new-quick-export').click()
+    time.sleep(10)
+    # now officially download
+    self.find_element(By.ID, 'js-download').click()
+    # wait to ensure download finished
+    time.sleep(5)
+    # click profile then logout
+    self.find_element(By.XPATH, '//*[@id="navbar-right"]/li[1]/a').click()
+    self.find_element(By.XPATH,'//*[@id="navbar-right"]/li[1]/ul/li[4]/a').click()
+    # then close our session
+    self.close()

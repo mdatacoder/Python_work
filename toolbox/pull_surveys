@@ -1,0 +1,42 @@
+from toolbox.scraping_using_selenium import pull_survey
+import pandas as pd
+import os
+from glob import glob
+import re
+
+## IMPORTANT --> you need to ensure your chrome is up to date and the self in the solutions folder matches the chrome system
+USERNAME = account_email_adress_here
+PASSWORD = account_password_here
+
+URL = url_here
+
+USER = os.getcwd().split('\\')[2]
+
+# we need a webdriver, as i prefer chrome this is what was downloaded, you can visit the chrome site to find the driver you need
+# they must be the correct version for the platform used eg. chrome(1.1) must have driver(1.1)
+webdriverPATH = fr"C:\Users\{USER}\{path_where_you_saved_driver}\chromedriver_win32\chromedriver.exe"
+OUTPUT_PATH = fr"C:\Users\{USER}\{path_for_saving_data}\survey_exports"
+ID_PATH = fr"C:\Users\{USER}\{path_for_reference_data}\reference_data"
+
+
+
+df = pd.read_excel(os.path.join(ID_PATH, 'my_reference_data.xlsx') )
+df = df[df['id'].notnull()]
+df['id'] = df['id'].astype(int)
+
+
+
+
+for SURVEY_NO in df['id'].unique().tolist():
+    a = pull_survey(URL,USERNAME,PASSWORD,SURVEY_NO,webdriverPATH,OUTPUT_PATH)
+    list_files = os.listdir(OUTPUT_PATH)
+    to_rename = [a for a in list_files if bool(re.search(r"[\d*]-SurveyExport", a)) == True][0]
+    new_name = df.loc[df['id'] == SURVEY_NO, 'client'].tolist()[0] + '.csv'
+    survey_type = df.loc[df['id'] == SURVEY_NO, 'type'].tolist()[0]
+    if not os.path.exists(OUTPUT_PATH+'\\'+survey_type):
+        os.mkdir(OUTPUT_PATH+'\\'+survey_type)
+    if os.path.exists(OUTPUT_PATH+'\\'+survey_type+'\\'+new_name):
+        os.remove(os.path.join(OUTPUT_PATH, survey_type, new_name))
+
+    os.rename(os.path.join(OUTPUT_PATH , to_rename),
+              os.path.join(OUTPUT_PATH , survey_type , new_name))
