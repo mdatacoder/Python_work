@@ -1,0 +1,141 @@
+import sys
+import time
+import requests
+import json
+import pandas as pd
+import os
+import datetime as dt
+from dateutil.relativedelta import relativedelta
+import re
+
+USER = os.getcwd().split('\\')[2]
+
+# this is open source, website url does not change the data's url (clearly not well protected) - pulled data by inspecting the website's map feature found here:
+# https://roms.org.uk/find-an-approved-scorer/
+url = 'https://roms.org.uk/wp-json/wpgmza/v1/features/base64eJyrVkrLzClJLVKyUqqOUcpNLIjPTIlRsopRMolR0gEJFGeUFni6FAPFomOBAsmlxSX5uW6ZqTkpELFapVoABc4WvQ'
+# a path to keep the version of ROMS
+path = fr"C:\Users\{USER}\{directory_url_here}\RoMs Scorers"
+
+
+"""
+This code will pull the most recent data, then according to conditions laid out it will append this new data so we have
+a continous updated excel with conditional formatted rows when certain conditions are met. e.g new customer or expired customer
+"""
+
+
+def pull_data_url(URL):
+    try:
+        page = requests.get(URL)  # this might throw an exception if something goes wrong.
+
+    except Exception as e:
+        error_type, error_obj, error_info = sys.exc_info()
+        print('ERROR FOR LINK:', URL)
+        print(error_type, 'Line:', error_info.tb_lineno)
+
+    time.sleep(2)
+
+    full_json = json.loads(page.text)
+
+    return full_json
+
+def pull_markers_from_json(self):
+    # loop to go through the number of elements in our list of data and pull only what we need
+    final_list = []
+    for dictNO in range(len(self['markers'])):
+        out = {}
+        seq = self['markers'][dictNO]
+        out['Email'] = seq['description'].split('mailto:')[1].split('">')[0]
+        if '@' not in out['Email']:
+            out['Email'] = re.sub(r'\s+','',seq['title']) + '@unknown'
+        out['Name'] = seq['title']
+        out['Approved'] = seq['approved'].replace('1','yes').replace('0','no')
+        out['ExpiryDate'] = seq['description'].split('Membership expiry: ')[1].split('<')[0]
+        final_list.append(out)
+    return final_list
+
+def processing_data(df):
+    # make amends to columns e.g convert dates into a date format etc
+    df['ExpiryDate'] = df['ExpiryDate'].str.findall(r'^(\d{1,2})').str[0] + '-' + df['ExpiryDate'].str.split(' ').str[1] +'-' +df['ExpiryDate'].str.split(' ').str[2]
+    df['ExpiryDate'] = pd.to_datetime(df['ExpiryDate'], format='%d-%B-%Y', utc=False)
+    df['Name'] = df['Name'].str.title()
+    df = df[df['ExpiryDate'] > dt.datetime.now()]
+
+    # pull old excel
+    df_old = pd.read_excel(path, 'list_scorers_ROMS.xlsx')
+    df_old['ExpiryDate'] = pd.to_datetime(df_old['ExpiryDate'], format='%d-%B-%Y', utc=False)
+    df_old['Name'] = df_old['Name'].str.title()
+
+    # only add new customers using email as ID
+    new_customers = df[~ df['Email'].isin(df_old['Email'].unique().tolist())]
+
+    # use merge and indicator to compare the two dfs
+    dfALL = df_old.loc[:, ~df_old.columns.str.contains(r'^CodeRanDate$')].merge(df, indicator=True, how='outer')
+
+    # we're only adding new expiries which are from the right df
+    new_expiries = dfALL[dfALL['_merge'] == 'right_only']
+
+    # concat old data, new customers & new expiries
+    final_df = pd.concat([df_old,new_customers,new_expiries.drop('_merge',axis=1)]).reset_index(drop=True)
+
+    # only add in todays code ran date to the new rows added ONLY
+    final_df.loc[final_df['CodeRanDate'].isnull(), 'CodeRanDate'] = pd.to_datetime(dt.date.today())
+
+
+    # instead of merging which can cause issues we map the new values to our df
+    approval_list = final_df.groupby('Email').apply(lambda row: 'no' if row['ExpiryDate'].max() < dt.date.today() else 'yes').reset_index(name='Approved')
+    final_df['Approved'] = final_df['Email'].map(approval_list.set_index('Email')['Approved'])
+    records = final_df['Email'].value_counts().reset_index(name='records')
+    final_df['RecordsNo'] = final_df['Email'].map(records.set_index('index')['records'])
+
+    # remove all expiries older than 1 year
+    final_df = final_df[final_df['ExpiryDate'] >= (dt.date.today() - relativedelta(years=1,days=1)).strftime('%Y-%m-%d')]
+
+    # sort values & drop duplicates (jic)
+    final_df.sort_values(['CodeRanDate','Name'], ascending=False, inplace=True)
+    final_df.reset_index(drop=True, inplace=True)
+    final_df.drop_duplicates(['Name','ExpiryDate','Approved','Email'],inplace=True)
+    return final_df
+
+def saving_dataframe_as_workbook(self, path=False):
+    if path:
+        writer = pd.ExcelWriter(os.path.join(path,'list_scorers_ROMS.xlsx'), engine='xlsxwriter')
+    else:
+        writer = pd.ExcelWriter('list_scorers_ROMS.xlsx', engine='xlsxwriter')
+    self.to_excel(writer, sheet_name='all_data', index=False, header=True)
+
+    # pull the workbook and sheets objects from xlsx writer
+    workbook = writer.book
+    worksheet = writer.sheets['all_data']
+
+    # yellow fill
+    yell_fill = workbook.add_format({'bg_color'  : '#ffff00'
+                                  #,'font_color': '#9C0006'
+    })
+    datarange = 'A1:F' + str(len(final_df))
+    # apply format to conditional format
+    worksheet.conditional_format(datarange, {'type'    : 'formula'
+                                            ,'criteria': '=OR($B1="no",$F1>1)'
+                                            ,'format'  : yell_fill
+    })
+
+    # red fill
+    red_fill = workbook.add_format({'bg_color': '#ff4d4d'
+                                   # ,'font_color': '#9C0006'
+                                   })
+    datarange = 'E1:E' + str(len(final_df))
+    # apply format to conditional format
+    worksheet.conditional_format(datarange, {'type': 'formula'
+                                           , 'criteria': '=SEARCH("@unknown",$E1)'
+                                           , 'format': red_fill
+                                             })
+    writer.save()
+
+
+#pull data
+Jdata = pull_data_url(url)
+# create into a df
+new_df = pd.DataFrame(pull_markers_from_json(Jdata))
+# process data such as formatting and filtering duplicates so we only add new or updated clients
+final_df = processing_data(new_df)
+# next we output as a conditional formatted document for easy viewing by admin team
+saving_dataframe_as_workbook(final_df, path)
