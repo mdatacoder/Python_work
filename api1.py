@@ -1,3 +1,8 @@
+"""
+Please note that functions get_new_token(), fetch_data() and the start of the if name == main up to collection of sites were created as a collaborative team
+"""
+
+
 import sys
 import requests
 import json
