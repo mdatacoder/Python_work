@@ -150,7 +150,7 @@ def simplify_reasons(blob):
     else:
         return blob
 
-#%%  Adding Rejections: Calf survey
+#%%  Adding extra data
 path = fr"C:\Users\{USER}{path_for_addtions to data}"
 # we say pick all files which are the survey but not containing August
 csurvey = pd.read_excel(glob.glob(os.path.join(path, '[!August]*Survey*.xlsx' ))[0])
